@@ -1051,7 +1051,7 @@ class UpstreamBridge {
     const upstreamCfg = config.upstream || {};
     if (!this.selfClient || !this.isReady) return null;
 
-    const queueChannelId = upstreamCfg.rootQueueChannelId || '1405832729114710036';
+    const queueChannelId = upstreamCfg.rootQueueChannelId || upstreamCfg.channelId || '1405832729114710036';
     try {
       const qChannel = await this.selfClient.channels.fetch(queueChannelId).catch(() => null);
       if (!qChannel) return null;

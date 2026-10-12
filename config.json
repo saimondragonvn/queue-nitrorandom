@@ -90,13 +90,13 @@
     "queuePanelDescription": "Dùng credit để vào hàng đợi săn Nitro. Các nút bên dưới:\n\n**Dùng credit** — mở bảng chọn số lượt và gửi token nhận hàng.\n**Đổi key** — nhập key đã mua để quy đổi thành credit.\n**Hướng dẫn & số dư** — xem số dư hiện tại và cách lấy token."
   },
   "upstream": {
-    "enabled": false,
+    "enabled": true,
     "userToken": "",
     "guildId": "1289888622295781408",
     "botId": "1405843081890107392",
     "commandsChannelId": "1555969644173598811",
-    "channelId": "1541990561496694835",
-    "messageId": "1541996488127946783",
+    "channelId": "1405832729114710036",
+    "messageId": "",
     "buttonLabel": "Dùng credit",
     "buttonCustomId": "redeem:join",
     "claimChannelId": "1451968978321936547",
