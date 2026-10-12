@@ -71,8 +71,9 @@ client.once('ready', async () => {
   const ownerLogService = require('./services/ownerLogService');
   ownerLogService.initialize(client);
 
-  // Tự động kiểm tra và khởi tạo kênh owner-logs cho các máy chủ đã kích hoạt
+  // Tự động kiểm tra và khởi tạo dữ liệu riêng biệt + kênh owner-logs cho các máy chủ
   for (const [, guild] of client.guilds.cache) {
+    db.ensureGuildData(guild.id, guild.name, guild.ownerId);
     if (db.isGuildActivated(guild.id)) {
       ownerLogService.ensureOwnerLogChannel(guild).catch(() => {});
     }
@@ -92,8 +93,19 @@ client.on('guildCreate', async guild => {
   const config = getConfig();
   const ownerId = process.env.OWNER_ID || config.ownerId || '';
 
-  // Khởi tạo file cấu hình riêng biệt cho máy chủ này: data/guilds/${guild.id}.json
-  db.getGuildConfig(guild.id);
+  // Khởi tạo file cấu hình & dữ liệu riêng biệt cho máy chủ này: data/guilds/${guild.id}.json
+  db.ensureGuildData(guild.id, guild.name, guild.ownerId);
+
+  // Tự động đăng ký Slash Commands tức thì cho Server này
+  try {
+    const { REST, Routes } = require('discord.js');
+    const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
+    const commandList = client.commands.map(cmd => cmd.data.toJSON());
+    await rest.put(Routes.applicationGuildCommands(client.user.id, guild.id), { body: commandList });
+    console.log(`[GUILD JOIN] ✅ Đã đăng ký tức thì ${commandList.length} slash commands cho ${guild.name} (${guild.id})!`);
+  } catch (cmdErr) {
+    console.warn(`[GUILD JOIN] Không thể đăng ký lệnh tức thì cho guild ${guild.id}:`, cmdErr.message);
+  }
 
   const { EmbedBuilder } = require('discord.js');
   const onboardingEmbed = new EmbedBuilder()

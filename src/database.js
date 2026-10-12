@@ -1257,6 +1257,89 @@ const db = {
     } catch (err) {
       return {};
     }
+  },
+
+  ensureGuildData(guildId, guildName = '', ownerId = '') {
+    if (!guildId) return {};
+    const filePath = path.join(GUILDS_DIR, `${guildId}.json`);
+    let data = {};
+    if (fs.existsSync(filePath)) {
+      try {
+        data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      } catch (e) {
+        data = {};
+      }
+    }
+
+    let modified = false;
+    if (!data.guildId) { data.guildId = String(guildId); modified = true; }
+    if (guildName && data.name !== guildName) { data.name = guildName; modified = true; }
+    if (ownerId && data.ownerId !== ownerId) { data.ownerId = ownerId; modified = true; }
+    if (!data.joinedAt) { data.joinedAt = new Date().toISOString(); modified = true; }
+    if (!data.users) { data.users = {}; modified = true; }
+    if (!data.orders) { data.orders = []; modified = true; }
+    if (!data.stats) {
+      data.stats = {
+        totalClaims: 0,
+        claimsToday: 0,
+        basicCount: 0,
+        boostCount: 0,
+        totalValueUsd: 0,
+        totalValueVnd: 0
+      };
+      modified = true;
+    }
+    if (data.upstreamToken === undefined) { data.upstreamToken = ''; modified = true; }
+    if (data.upstreamCredits === undefined) { data.upstreamCredits = 0; modified = true; }
+    if (!data.channels) { data.channels = {}; modified = true; }
+    if (data.license === undefined) {
+      const act = settingsStore.data[`activated_${guildId}`];
+      data.license = act ? { ...act } : null;
+      modified = true;
+    }
+    if (!data.createdAt) { data.createdAt = new Date().toISOString(); modified = true; }
+
+    if (modified || !fs.existsSync(filePath)) {
+      data.updatedAt = new Date().toISOString();
+      try {
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+      } catch (e) {
+        console.error(`[DB] Lỗi lưu ensureGuildData cho ${guildId}:`, e);
+      }
+    }
+
+    return data;
+  },
+
+  getGuildUpstreamCredits(guildId) {
+    if (!guildId) {
+      const { getConfig } = require('./config');
+      return getConfig().upstream?.upstreamCredits ?? 0;
+    }
+    const gConfig = this.getGuildConfig(guildId);
+    return gConfig.upstreamCredits ?? 0;
+  },
+
+  setGuildUpstreamCredits(guildId, amount) {
+    if (!guildId) {
+      const { getConfig, saveConfig } = require('./config');
+      const cfg = getConfig();
+      if (!cfg.upstream) cfg.upstream = {};
+      cfg.upstream.upstreamCredits = Number(amount);
+      saveConfig(cfg);
+      return cfg.upstream.upstreamCredits;
+    }
+    const gConfig = this.getGuildConfig(guildId);
+    gConfig.upstreamCredits = Number(amount);
+    this.setGuildConfig(guildId, { upstreamCredits: gConfig.upstreamCredits });
+    return gConfig.upstreamCredits;
+  },
+
+  deductGuildUpstreamCredits(guildId, amount) {
+    const current = this.getGuildUpstreamCredits(guildId);
+    const newAmount = Math.max(0, current - Number(amount));
+    this.setGuildUpstreamCredits(guildId, newAmount);
+    return newAmount;
   }
 };
 

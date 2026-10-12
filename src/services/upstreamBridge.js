@@ -185,12 +185,14 @@ class UpstreamBridge {
     const upstreamCfg = config.upstream || {};
     const { decryptToken } = require('../utils/security');
     const cleanCustomerToken = decryptToken(String(token));
+    const targetHQGuildId = '1289888622295781408';
 
     let activeClient = null;
+    let guildCfg = null;
     if (guildId) {
-      const guildCfg = db.getGuildConfig(guildId) || {};
+      guildCfg = db.getGuildConfig(guildId) || {};
       if (guildCfg.upstreamToken) {
-        activeClient = await this.getClientForToken(guildCfg.upstreamToken);
+        activeClient = await this.getClientForToken(guildCfg.upstreamToken, guildId);
       } else {
         return {
           success: false,
@@ -208,7 +210,29 @@ class UpstreamBridge {
       };
     }
 
-    const targetGuildId = upstreamCfg.guildId || process.env.UPSTREAM_GUILD_ID;
+    // Kiểm tra tài khoản đã tham gia máy chủ Shop Gốc 1289888622295781408 chưa
+    let inHQ = false;
+    try {
+      inHQ = activeClient.guilds.cache.has(targetHQGuildId) || !!(await activeClient.guilds.fetch(targetHQGuildId).catch(() => null));
+    } catch (e) {}
+    if (!inHQ) {
+      return {
+        success: false,
+        message: `❌ Tài khoản kết nối của server này chưa tham gia máy chủ Shop Gốc (ID: \`${targetHQGuildId}\`)! Vui lòng cho tài khoản tham gia server gốc trước.`
+      };
+    }
+
+    // Kiểm tra số credit bên shop gốc của server này
+    const cost = isPriority ? turns * (config.queueSettings?.priorityMultiplier || 3) : turns;
+    const currentCredits = db.getGuildUpstreamCredits(guildId);
+    if (guildId && guildCfg && guildCfg.upstreamCredits !== undefined && currentCredits < cost) {
+      return {
+        success: false,
+        message: `❌ Tài khoản sỉ của máy chủ này không đủ credit bên shop gốc! Hiện có **${currentCredits} credit**, cần **${cost} credit** để nộp đơn. Vui lòng liên hệ Admin nạp thêm credit.`
+      };
+    }
+
+    const targetGuildId = upstreamCfg.guildId || process.env.UPSTREAM_GUILD_ID || targetHQGuildId;
     const channelId = upstreamCfg.channelId || process.env.UPSTREAM_CHANNEL_ID;
     const messageId = upstreamCfg.messageId || process.env.UPSTREAM_MESSAGE_ID;
 
@@ -237,17 +261,28 @@ class UpstreamBridge {
                    desc.includes('không hợp lệ') || desc.includes('không đúng định dạng') || desc.includes('đang có đơn');
           }) || (upstreamMsg.content && (upstreamMsg.content.includes('không đủ') || upstreamMsg.content.includes('lỗi')));
 
-          const cost = isPriority ? turns * (config.queueSettings?.priorityMultiplier || 3) : turns;
-          if (!isError && config.upstream.upstreamCredits != null) {
-            config.upstream.upstreamCredits = Math.max(0, config.upstream.upstreamCredits - cost);
-            saveConfig(config);
+          if (!isError) {
+            if (guildId) {
+              db.deductGuildUpstreamCredits(guildId, cost);
+            } else if (config.upstream.upstreamCredits != null) {
+              config.upstream.upstreamCredits = Math.max(0, config.upstream.upstreamCredits - cost);
+              saveConfig(config);
+            }
+          }
+
+          let upstreamOrderId = null;
+          const rawText = (upstreamMsg.content || '') + ' ' + (upstreamMsg.embeds?.[0]?.data?.description || '') + ' ' + (upstreamMsg.embeds?.[0]?.data?.title || '');
+          const ordMatch = rawText.match(/ORD-[a-zA-Z0-9-]+/i) || rawText.match(/Mã đơn:\s*`?([a-zA-Z0-9-]+)`?/i);
+          if (ordMatch) {
+            upstreamOrderId = ordMatch[1] || ordMatch[0];
           }
 
           return {
             success: !isError,
             message: upstreamMsg.content || upstreamMsg.embeds?.[0]?.data?.description || upstreamMsg.embeds?.[0]?.data?.title || 'Đã xử lý bên shop gốc',
             upstreamResponse: upstreamMsg,
-            cost
+            cost,
+            upstreamOrderId
           };
         }
       } catch (slashErr) {
@@ -484,7 +519,9 @@ class UpstreamBridge {
 
       // Trừ số credit ước tính bên shop gốc
       const cost = isPriority ? turns * (config.queueSettings?.priorityMultiplier || 3) : turns;
-      if (config.upstream.upstreamCredits != null) {
+      if (guildId) {
+        db.deductGuildUpstreamCredits(guildId, cost);
+      } else if (config.upstream?.upstreamCredits != null) {
         config.upstream.upstreamCredits = Math.max(0, config.upstream.upstreamCredits - cost);
         saveConfig(config);
       }

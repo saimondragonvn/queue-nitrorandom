@@ -152,30 +152,59 @@ module.exports = {
         const tokenUserId = tokenCheck.user?.id || extractUserIdFromToken(trimmedToken) || null;
         const tokenUsername = tokenCheck.user?.username || tokenCheck.user?.global_name || null;
 
-        const result = queueService.enterQueue({
-          userId: interaction.user.id,
-          username: interaction.user.tag || interaction.user.username,
-          turns,
-          token: trimmedToken,
-          tokenUserId,
-          tokenUsername,
-          isPriority,
-          guildId: originGuildId,
-          isDm: !interaction.guildId
-        });
-
-        if (!result.success) {
-          return interaction.reply({ content: `❌ ${result.message}`, ephemeral: true });
-        }
-
-        const { order, requiredCredits, remainingBalance } = result;
         const { getConfig } = require('../config');
         const config = getConfig();
-        const upstreamBridge = require('../services/upstreamBridge');
-        const { sanitizeAndWhitelabelEmbed } = require('../utils/embeds');
+        const priorityMultiplier = config.queueSettings?.priorityMultiplier || 3;
+        const requiredCredits = isPriority ? turns * priorityMultiplier : turns;
 
-        const activeList = db.getActiveQueue(originGuildId);
-        const position = activeList.findIndex(o => o.id === order.id) + 1 || activeList.length;
+        // 1. Kiểm tra số dư của khách trước tại máy chủ này (chưa trừ)
+        const customerUser = db.getUser(interaction.user.id, originGuildId);
+        if (customerUser.balance < requiredCredits) {
+          return interaction.reply({
+            content: `❌ **Số dư không đủ!** Bạn cần **${requiredCredits} credit** (${turns} lượt${isPriority ? ` x ${priorityMultiplier} [Ưu tiên]` : ''}), nhưng hiện chỉ có **${customerUser.balance} credit**.\n💡 Dùng lệnh \`/topup\` hoặc nạp thêm thẻ/key để tiếp tục!`,
+            ephemeral: true
+          });
+        }
+
+        // 2. Kiểm tra giới hạn: 1 token chỉ được xuất hiện tối đa maxEntriesPerToken trong queue
+        const maxEntriesPerToken = config.queueSettings?.maxQueueEntriesPerToken || 3;
+        const masked = maskToken(trimmedToken);
+        const activeQueue = db.getActiveQueue(originGuildId);
+        const existingOrdersForToken = activeQueue.filter(o => {
+          if (tokenUserId && o.tokenUserId && o.tokenUserId === tokenUserId) return true;
+          if (o.tokenMasked && o.tokenMasked === masked) return true;
+          return false;
+        });
+
+        if (existingOrdersForToken.length >= maxEntriesPerToken) {
+          return interaction.reply({
+            content: `⚠️ **GIỚI HẠN HÀNG ĐỢI:** Token này đã xuất hiện **${existingOrdersForToken.length}/${maxEntriesPerToken} lượt** trong hàng đợi!\n` +
+                     `Vui lòng chờ các lượt hiện tại hoàn thành trước khi thêm tiếp (Quy định: 1 token chỉ được xuất hiện tối đa ${maxEntriesPerToken} lượt trong queue để tránh rải hàng dài).`,
+            ephemeral: true
+          });
+        }
+
+        // 3. Kiểm tra cấu hình và hạn mức credit sỉ của máy chủ tại shop gốc
+        if (originGuildId) {
+          const guildCfg = db.getGuildConfig(originGuildId) || {};
+          if (!guildCfg.upstreamToken) {
+            return interaction.reply({
+              content:
+                `⚠️ **MÁY CHỦ CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
+                `Quản trị viên máy chủ chưa cài đặt tài khoản sỉ (Upstream Token) kết nối với shop gốc.\n` +
+                `👉 Vui lòng liên hệ Admin/Chủ shop gõ lệnh:\n` +
+                `\`/upstream token token:<token_acc_gốc>\` để kích hoạt nhận đơn!`,
+              ephemeral: true
+            });
+          }
+          const currentUpCredits = db.getGuildUpstreamCredits(originGuildId);
+          if (guildCfg.upstreamCredits !== undefined && currentUpCredits < requiredCredits) {
+            return interaction.reply({
+              content: `⚠️ **Hàng đợi tạm thời hết hạn mức sỉ!**\nTài khoản sỉ của máy chủ hiện không đủ credit bên shop gốc (${currentUpCredits}/${requiredCredits}). Vui lòng báo Admin nạp thêm!`,
+              ephemeral: true
+            });
+          }
+        }
 
         const resolvedGuild = interaction.guild || (originGuildId ? interaction.client.guilds.cache.get(originGuildId) : null);
         const guildCfg = originGuildId ? db.getGuildConfig(originGuildId) : {};
@@ -184,6 +213,72 @@ module.exports = {
         if (!serverIcon) {
           serverIcon = interaction.client?.user?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null;
         }
+
+        // 4. BẮT ĐẦU CHỜ BÊN SHOP GỐC XÁC NHẬN THÀNH CÔNG (DEFER REPLY)
+        await interaction.deferReply({ ephemeral: true });
+
+        const upstreamBridge = require('../services/upstreamBridge');
+        const forwardRes = await upstreamBridge.submitToUpstreamQueue({
+          turns,
+          token: trimmedToken,
+          isPriority,
+          guildId: originGuildId
+        });
+
+        // NẾU BÊN GỐC TỪ CHỐI HOẶC THẤT BẠI: KHÔNG TRỪ CREDIT KHÁCH & KHÔNG TẠO ĐƠN!
+        if (!forwardRes.success) {
+          try {
+            const ownerLogService = require('../services/ownerLogService');
+            ownerLogService.logUpstreamError({
+              error: forwardRes.message || 'Lỗi kết nối hoặc tài khoản sỉ không đủ credit',
+              context: 'Chuyển tiếp đơn /redeem credits',
+              guildId: originGuildId
+            });
+          } catch (e) {}
+
+          const failEmbed = new EmbedBuilder()
+            .setTitle('Hàng đợi tạm thời chưa thể duyệt đơn')
+            .setColor('#ED4245')
+            .setDescription(
+              `Hệ thống shop gốc từ chối hoặc chưa thể tiếp nhận đơn vào lúc này.\n` +
+              `• Chi tiết phản hồi: \`${forwardRes.message || 'Shop gốc đang bận hoặc quá tải'}\`\n\n` +
+              `🛡️ **Số dư của bạn được bảo toàn 100%:** **${customerUser.balance} credit** (Chưa bị trừ bất kỳ xu nào).\n` +
+              `Vui lòng thử lại sau ít phút hoặc liên hệ Quản trị viên để được hỗ trợ!`
+            );
+          if (serverIcon) failEmbed.setThumbnail(serverIcon);
+          failEmbed.setFooter({ text: serverName, iconURL: serverIcon || undefined });
+
+          return interaction.editReply({ embeds: [failEmbed] });
+        }
+
+        // 5. BÊN GỐC ĐÃ THÀNH CÔNG -> LÚC NÀY MỚI DUYỆT BÊN NÀY (TRỪ CREDIT & TẠO ĐƠN NỘI BỘ)
+        db.deductCredits(interaction.user.id, requiredCredits, originGuildId);
+        const updatedCustomer = db.getUser(interaction.user.id, originGuildId);
+        const remainingBalance = updatedCustomer.balance;
+
+        const order = db.createOrder({
+          userId: interaction.user.id,
+          username: interaction.user.tag || interaction.user.username,
+          token: trimmedToken,
+          tokenUserId,
+          tokenUsername,
+          turns,
+          isPriority,
+          guildId: originGuildId,
+          isDm: !interaction.guildId
+        });
+
+        db.updateOrder(order.id, {
+          upstreamSynced: true,
+          upstreamOrderId: forwardRes.upstreamOrderId || null
+        });
+
+        // Cập nhật lại hiển thị hàng đợi realtime
+        const updaterService = require('../services/updaterService');
+        updaterService.notifyQueueChanged(originGuildId);
+
+        const activeList = db.getActiveQueue(originGuildId);
+        const position = activeList.findIndex(o => o.id === order.id) + 1 || activeList.length;
 
         const successEmbed = new EmbedBuilder()
           .setTitle('Đã đổi credit thành công')
@@ -200,74 +295,25 @@ module.exports = {
         if (serverIcon) successEmbed.setThumbnail(serverIcon);
         successEmbed.setFooter({ text: serverName, iconURL: serverIcon || undefined });
 
-        if (config.upstream?.enabled && config.upstream?.autoForward) {
-          await interaction.deferReply({ ephemeral: true });
-
-          const forwardRes = await upstreamBridge.submitToUpstreamQueue({
-            turns,
-            token: trimmedToken,
-            isPriority,
-            guildId: originGuildId
-          });
-
-          if (!forwardRes.success) {
-            db.cancelOrder(order.id, interaction.user.id);
-            const refundedUser = db.getUser(interaction.user.id, originGuildId);
-
-            // Bắn cảnh báo bảo mật về kênh bí mật của Server Owner
-            try {
-              const ownerLogService = require('../services/ownerLogService');
-              ownerLogService.logUpstreamError({
-                error: forwardRes.message || 'Lỗi kết nối hoặc tài khoản sỉ không đủ credit',
-                order,
-                context: 'Chuyển tiếp đơn /redeem credits',
-                guildId: originGuildId
-              });
-            } catch (e) {}
-
-            const failEmbed = new EmbedBuilder()
-              .setTitle('Hàng đợi tạm thời bảo trì')
-              .setColor('#ED4245')
-              .setDescription(
-                `Hệ thống xử lý đơn hiện đang bảo trì hoặc quá tải lượt.\n` +
-                `Đơn hàng của bạn chưa thể thực hiện vào lúc này.\n\n` +
-                `• Đã hoàn lại: **+${requiredCredits} credit** vào ví của bạn tại server này.\n` +
-                `• Số dư hiện tại: **${refundedUser.balance} credit**.\n\n` +
-                `Vui lòng thử lại sau ít phút hoặc liên hệ Quản trị viên để được hỗ trợ!`
-              );
-            if (serverIcon) failEmbed.setThumbnail(serverIcon);
-            failEmbed.setFooter({ text: serverName, iconURL: serverIcon || undefined });
-
-            return interaction.editReply({ embeds: [failEmbed] });
-          }
-
-          db.updateOrder(order.id, { upstreamSynced: true });
-
-          // WHITELABEL 100% bằng avatar và tên của SERVER này
-          if (forwardRes.upstreamResponse?.embeds?.length) {
-            const whitelabeledEmbed = sanitizeAndWhitelabelEmbed(
-              forwardRes.upstreamResponse.embeds[0],
-              resolvedGuild,
-              config,
-              {
-                customerUser: interaction.user,
-                customerBalance: remainingBalance,
-                client: interaction.client
-              }
-            );
-            interaction.user.send({ embeds: [whitelabeledEmbed] }).catch(() => {});
-            return interaction.editReply({ embeds: [whitelabeledEmbed] });
-          }
-
-          interaction.user.send({ embeds: [successEmbed] }).catch(() => {});
-          return interaction.editReply({ embeds: [successEmbed] });
+        // WHITELABEL 100% bằng avatar và tên của SERVER này
+        if (forwardRes.upstreamResponse?.embeds?.length) {
+          const { sanitizeAndWhitelabelEmbed } = require('../utils/embeds');
+          const whitelabeledEmbed = sanitizeAndWhitelabelEmbed(
+            forwardRes.upstreamResponse.embeds[0],
+            resolvedGuild,
+            config,
+            {
+              customerUser: interaction.user,
+              customerBalance: remainingBalance,
+              client: interaction.client
+            }
+          );
+          interaction.user.send({ embeds: [whitelabeledEmbed] }).catch(() => {});
+          return interaction.editReply({ embeds: [whitelabeledEmbed] });
         }
 
         interaction.user.send({ embeds: [successEmbed] }).catch(() => {});
-        return interaction.reply({
-          embeds: [successEmbed],
-          ephemeral: true
-        });
+        return interaction.editReply({ embeds: [successEmbed] });
       }
 
       // Nếu không điền tham số -> Mở Modal "Vào hàng đợi" (Ảnh 4)

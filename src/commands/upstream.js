@@ -25,6 +25,13 @@ module.exports = {
             .setDescription('Token tài khoản Discord cá nhân (tài khoản có credit bên shop gốc)')
             .setRequired(true)
         )
+        .addIntegerOption(opt =>
+          opt
+            .setName('credits')
+            .setDescription('Số credit hiện có của tài khoản này tại shop gốc (mặc định: 0)')
+            .setRequired(false)
+            .setMinValue(0)
+        )
     )
     .addSubcommand(sub =>
       sub
@@ -169,18 +176,55 @@ module.exports = {
 
       try {
         const loggedUser = await upstreamBridge.loginWithToken(interaction.client, userToken, interaction.guildId);
+
+        // KIỂM TRA BẮT BUỘC: Tài khoản phải đã tham gia server shop gốc 1289888622295781408
+        const targetHQGuildId = '1289888622295781408';
+        const clientForToken = await upstreamBridge.getClientForToken(userToken, interaction.guildId);
+        let hasJoinedHQ = false;
+        if (clientForToken && clientForToken.readyAt) {
+          hasJoinedHQ = clientForToken.guilds.cache.has(targetHQGuildId) ||
+            !!(await clientForToken.guilds.fetch(targetHQGuildId).catch(() => null));
+        }
+
+        if (!hasJoinedHQ) {
+          return interaction.editReply({
+            content:
+              `❌ **TÀI KHOẢN CHƯA THAM GIA MÁY CHỦ SHOP GỐC!**\n\n` +
+              `• Tài khoản đã kiểm tra: **${loggedUser.tag}** (\`${loggedUser.id}\`)\n` +
+              `• Máy chủ shop gốc bắt buộc: **HQ Shop Queue** (ID: \`${targetHQGuildId}\`)\n\n` +
+              `⚠️ **Quy định quan trọng:** Mỗi máy chủ cần 1 tài khoản Upstream Token **đã tham gia server shop gốc \`${targetHQGuildId}\`** và **có credit bên đó** thì hệ thống mới cho phép kích hoạt nhận đơn!\n\n` +
+              `👉 **Cách khắc phục:**\n` +
+              `1. Lấy link mời của server shop gốc (\`${targetHQGuildId}\`).\n` +
+              `2. Dùng tài khoản **${loggedUser.tag}** tham gia vào server đó.\n` +
+              `3. Chạy lại lệnh \`/upstream token token:<token> [credits:<số_credit>]\` để kết nối hoàn tất!`
+          });
+        }
+
+        // Đọc số credit khai báo kèm theo nếu có
+        const inputCredits = interaction.options.getInteger('credits');
+        let effectiveCredits = 0;
+        if (inputCredits !== null && inputCredits !== undefined) {
+          effectiveCredits = inputCredits;
+        } else if (interaction.guildId) {
+          effectiveCredits = db.getGuildUpstreamCredits(interaction.guildId);
+        }
+
         if (interaction.guildId) {
           db.setGuildConfig(interaction.guildId, {
             upstreamToken: userToken,
-            upstreamUserTag: loggedUser.tag
+            upstreamUserTag: loggedUser.tag,
+            upstreamUserId: loggedUser.id,
+            upstreamCredits: effectiveCredits
           });
         }
+
         return interaction.editReply({
           content:
             `✅ **CÀI ĐẶT TOKEN TÀI KHOẢN SHOP GỐC CHO SERVER NÀY THÀNH CÔNG!**\n\n` +
             `• Tài khoản Discord đã đăng nhập: **${loggedUser.tag}** (\`${loggedUser.id}\`)\n` +
             `• Trạng thái kết nối: **🟢 Online & Sẵn sàng**\n` +
-            `• Server shop gốc: \`${config.upstream?.guildId || '1289888622295781408'}\`\n` +
+            `• Đã tham gia server shop gốc (\`${targetHQGuildId}\`): **🟢 Đã tham gia hợp lệ**\n` +
+            `• Credit sỉ của server: **${effectiveCredits} credit**\n` +
             `• Kênh lệnh shop gốc: \`${config.upstream?.commandsChannelId || '1555969644173598811'}\`\n` +
             `• Lưu riêng tại file: \`data/guilds/${interaction.guildId}.json\`\n` +
             `• Tự động chuyển tiếp đơn: **🟢 BẬT**\n\n` +
@@ -231,8 +275,9 @@ module.exports = {
       db.updateOrder(order.id, { upstreamSynced: true });
 
       const updaterService = require('../services/updaterService');
-      updaterService.notifyQueueChanged();
+      updaterService.notifyQueueChanged(interaction.guildId);
 
+      const currentCredits = db.getGuildUpstreamCredits(interaction.guildId);
       return interaction.editReply({
         content:
           `✅ **ĐÃ DÙNG TÀI KHOẢN SHOP GỐC JOIN QUEUE THÀNH CÔNG!**\n\n` +
@@ -240,7 +285,7 @@ module.exports = {
           `• Số lượt: **${turns} lượt** (${isPriority ? 'Chế độ chắc cú/Ưu tiên 3x' : 'Bình thường'})\n` +
           `• Biểu mẫu shop gốc: *"${forwardRes.upstreamModalTitle || 'Dùng credit vào hàng đợi'}"*\n` +
           `• Credit gốc bị trừ: **${forwardRes.cost || turns} credit**\n` +
-          `• Credit gốc còn lại: **${config.upstream?.upstreamCredits ?? 0} credit**\n\n` +
+          `• Credit gốc còn lại của server: **${currentCredits} credit**\n\n` +
           `📡 *Đơn đã chính thức xếp hàng trên server shop gốc và cũng đã cập nhật vào bảng queue bot này!*`
       });
     }
@@ -248,21 +293,36 @@ module.exports = {
     // 1. /upstream status
     if (subcommand === 'status') {
       const up = config.upstream || {};
-      const isOnline = upstreamBridge.isReady;
-      const userTag = upstreamBridge.selfClient?.user?.tag || 'Chưa kết nối';
+      const targetHQGuildId = '1289888622295781408';
+      let guildUpstreamTag = 'Chưa cài đặt';
+      let guildUpstreamCredits = 0;
+      let guildJoinedHQ = false;
+      let isGuildOnline = false;
+
+      if (interaction.guildId) {
+        const guildCfg = db.getGuildConfig(interaction.guildId) || {};
+        guildUpstreamTag = guildCfg.upstreamUserTag || (guildCfg.upstreamToken ? 'Đã cài token' : 'Chưa cài đặt');
+        guildUpstreamCredits = db.getGuildUpstreamCredits(interaction.guildId);
+        if (guildCfg.upstreamToken) {
+          const clientForToken = await upstreamBridge.getClientForToken(guildCfg.upstreamToken, interaction.guildId);
+          if (clientForToken && clientForToken.readyAt) {
+            isGuildOnline = true;
+            guildJoinedHQ = clientForToken.guilds.cache.has(targetHQGuildId) ||
+              !!(await clientForToken.guilds.fetch(targetHQGuildId).catch(() => null));
+          }
+        }
+      }
 
       return interaction.reply({
         content:
-          `🔗 **Trạng thái liên kết Shop gốc (HQ Shop Queue):**\n` +
-          `• Kích hoạt: **${up.enabled ? '🟢 Đang BẬT' : '🔴 Đang TẮT'}** (Tự động điền: **${up.autoForward ? 'BẬT' : 'TẮT'}**)\n` +
-          `• Tài khoản gốc: **${userTag}** (${isOnline ? '🟢 Online' : '🔴 Offline'})\n` +
-          `• Credit gốc hiện có: **${up.upstreamCredits ?? 0} credit**\n` +
-          `• Server ID: \`${up.guildId || 'Chưa cài'}\`\n` +
-          `• Kênh Queue ID: \`${up.channelId || 'Chưa cài'}\`\n` +
-          `• Tin nhắn Button ID: \`${up.messageId || 'Chưa cài'}\`\n` +
-          `• Kênh Log Claim ID: \`${up.claimChannelId || 'Chưa cài'}\`\n\n` +
-          (upstreamBridge.lastError ? `⚠️ Lỗi gần nhất: \`${upstreamBridge.lastError}\`\n` : '') +
-          `*Dùng \`/upstream set\` để cài đặt ID kênh hoặc \`/upstream credits\` để chỉnh số dư.*`,
+          `🔗 **Trạng thái liên kết Shop gốc (HQ Shop Queue) của máy chủ:**\n` +
+          `• Tài khoản sỉ của server: **${guildUpstreamTag}** (${isGuildOnline ? '🟢 Online' : '🔴 Offline'})\n` +
+          `• Đã vào Server shop gốc (\`${targetHQGuildId}\`): **${guildJoinedHQ ? '🟢 Đã tham gia' : '🔴 Chưa tham gia'}**\n` +
+          `• Credit sỉ của server này: **${guildUpstreamCredits} credit**\n` +
+          `• Tự động chuyển tiếp đơn: **🟢 BẬT**\n` +
+          `• Kênh lệnh shop gốc: \`${config.upstream?.commandsChannelId || '1555969644173598811'}\`\n` +
+          `• Lưu riêng tại file: \`data/guilds/${interaction.guildId}.json\`\n\n` +
+          `*💡 Dùng \`/upstream token token:<token> [credits:<số>]\` để kết nối hoặc \`/upstream credits amount:<số>\` để nạp thêm credit sỉ.*`,
         ephemeral: true
       });
     }
@@ -289,10 +349,16 @@ module.exports = {
     // 3. /upstream credits
     if (subcommand === 'credits') {
       const amount = interaction.options.getInteger('amount');
-      upstreamBridge.setUpstreamCredits(amount);
+      if (interaction.guildId) {
+        db.setGuildUpstreamCredits(interaction.guildId, amount);
+      }
+      const isBotOwner = interaction.user.id === config.ownerId || interaction.user.id === process.env.OWNER_ID;
+      if (isBotOwner) {
+        upstreamBridge.setUpstreamCredits(amount);
+      }
 
       return interaction.reply({
-        content: `✅ Đã cập nhật số credit gốc của bạn thành: **${amount} credit**!`,
+        content: `✅ Đã cập nhật số credit gốc của máy chủ này thành: **${amount} credit**!`,
         ephemeral: true
       });
     }
