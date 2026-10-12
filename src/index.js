@@ -420,7 +420,11 @@ app.post('/api/payment/webhook', async (req, res) => {
   }
 });
 
-const PORT = process.env.WEBHOOK_PORT || 3000;
+app.get('/', (req, res) => {
+  res.send('Discord Nitro Random Bot is running online 🟢');
+});
+
+const PORT = process.env.PORT || process.env.WEBHOOK_PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🌐 Webhook server đang lắng nghe tại port: ${PORT}`);
 });
