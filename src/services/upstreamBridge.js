@@ -222,15 +222,8 @@ class UpstreamBridge {
       };
     }
 
-    // Kiểm tra số credit bên shop gốc của server này
+    // Tính toán số credit tiêu hao khi đặt đơn
     const cost = isPriority ? turns * (config.queueSettings?.priorityMultiplier || 3) : turns;
-    const currentCredits = db.getGuildUpstreamCredits(guildId);
-    if (guildId && guildCfg && guildCfg.upstreamCredits !== undefined && currentCredits < cost) {
-      return {
-        success: false,
-        message: `❌ Tài khoản sỉ của máy chủ này không đủ credit bên shop gốc! Hiện có **${currentCredits} credit**, cần **${cost} credit** để nộp đơn. Vui lòng liên hệ Admin nạp thêm credit.`
-      };
-    }
 
     const targetGuildId = upstreamCfg.guildId || process.env.UPSTREAM_GUILD_ID || targetHQGuildId;
     const channelId = upstreamCfg.channelId || process.env.UPSTREAM_CHANNEL_ID;
@@ -1004,19 +997,28 @@ class UpstreamBridge {
   /**
    * Tra cứu số dư từ shop gốc (/bank balance)
    */
-  async checkUpstreamBankBalance() {
-    if (!this.selfClient || !this.isReady) return null;
-    return await this.sendSlashAndWaitResponse('bank balance');
+  async checkUpstreamBankBalance(clientToUse = null) {
+    const client = clientToUse || this.selfClient;
+    if (!client || !client.readyAt) return null;
+    return await this.sendSlashAndWaitResponse('bank balance', client);
   }
 
   /**
    * Lấy số dư credit thực tế dạng số nguyên của token trên shop gốc
+   * @param {string|null} guildId
    * @returns {Promise<number|null>}
    */
-  async getUpstreamRealBalance() {
-    if (!this.selfClient || !this.isReady) return null;
+  async getUpstreamRealBalance(guildId = null) {
+    let clientToUse = this.selfClient;
+    if (guildId) {
+      const guildCfg = db.getGuildConfig(guildId) || {};
+      if (guildCfg.upstreamToken) {
+        clientToUse = await this.getClientForToken(guildCfg.upstreamToken, guildId);
+      }
+    }
+    if (!clientToUse || !clientToUse.readyAt) return null;
     try {
-      const res = await this.checkUpstreamBankBalance();
+      const res = await this.checkUpstreamBankBalance(clientToUse);
       if (!res) return null;
 
       const desc =
@@ -1028,7 +1030,11 @@ class UpstreamBridge {
       const match = desc.match(/\*\*Số dư:\*\*\s*(\d+)\s*credit/i) || desc.match(/(\d+)\s*credit/i);
       if (match) {
         const credits = parseInt(match[1], 10);
-        this.setUpstreamCredits(credits);
+        if (guildId) {
+          db.setGuildUpstreamCredits(guildId, credits);
+        } else {
+          this.setUpstreamCredits(credits);
+        }
         return credits;
       }
     } catch (e) {

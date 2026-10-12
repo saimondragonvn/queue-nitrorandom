@@ -128,7 +128,7 @@ async function handleModalInteraction(interaction) {
       });
     }
 
-    // 3. Kiểm tra cấu hình và hạn mức credit sỉ của máy chủ tại shop gốc
+    // 3. Kiểm tra cấu hình tài khoản sỉ của máy chủ tại shop gốc
     if (originGuildId) {
       const guildCfg = db.getGuildConfig(originGuildId) || {};
       if (!guildCfg.upstreamToken) {
@@ -138,13 +138,6 @@ async function handleModalInteraction(interaction) {
             `Quản trị viên máy chủ chưa cài đặt tài khoản sỉ (Upstream Token) kết nối với shop gốc.\n` +
             `👉 Vui lòng liên hệ Admin/Chủ shop gõ lệnh:\n` +
             `\`/upstream token token:<token_acc_gốc>\` để kích hoạt nhận đơn!`,
-          ephemeral: true
-        });
-      }
-      const currentUpCredits = db.getGuildUpstreamCredits(originGuildId);
-      if (guildCfg.upstreamCredits !== undefined && currentUpCredits < requiredCredits) {
-        return interaction.reply({
-          content: `⚠️ **Hàng đợi tạm thời hết hạn mức sỉ!**\nTài khoản sỉ của máy chủ hiện không đủ credit bên shop gốc (${currentUpCredits}/${requiredCredits}). Vui lòng báo Admin nạp thêm!`,
           ephemeral: true
         });
       }

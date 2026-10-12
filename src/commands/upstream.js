@@ -200,13 +200,22 @@ module.exports = {
           });
         }
 
-        // Đọc số credit khai báo kèm theo nếu có
+        // Đọc số credit khai báo kèm theo nếu có, hoặc tự động tra cứu từ shop gốc
         const inputCredits = interaction.options.getInteger('credits');
         let effectiveCredits = 0;
         if (inputCredits !== null && inputCredits !== undefined) {
           effectiveCredits = inputCredits;
-        } else if (interaction.guildId) {
-          effectiveCredits = db.getGuildUpstreamCredits(interaction.guildId);
+        } else {
+          try {
+            const realBal = await upstreamBridge.getUpstreamRealBalance(interaction.guildId);
+            if (realBal !== null) {
+              effectiveCredits = realBal;
+            } else if (interaction.guildId) {
+              effectiveCredits = db.getGuildUpstreamCredits(interaction.guildId);
+            }
+          } catch (e) {
+            effectiveCredits = db.getGuildUpstreamCredits(interaction.guildId);
+          }
         }
 
         if (interaction.guildId) {
@@ -309,6 +318,8 @@ module.exports = {
             isGuildOnline = true;
             guildJoinedHQ = clientForToken.guilds.cache.has(targetHQGuildId) ||
               !!(await clientForToken.guilds.fetch(targetHQGuildId).catch(() => null));
+            const realBal = await upstreamBridge.getUpstreamRealBalance(interaction.guildId).catch(() => null);
+            if (realBal !== null) guildUpstreamCredits = realBal;
           }
         }
       }
