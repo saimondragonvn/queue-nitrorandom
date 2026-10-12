@@ -1,0 +1,25 @@
+{
+  "name": "queue-nitrorandom",
+  "version": "1.0.0",
+  "description": "Discord Nitro Random Queue & Credit Shop Bot Clone",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node src/deploy-commands.js",
+    "deploy:global": "node src/deploy-commands.js --global"
+  },
+  "keywords": [
+    "discord-bot",
+    "nitro-random",
+    "queue-bot",
+    "credit-shop"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "discord.js-selfbot-v13": "^3.7.1",
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0"
+  }
+}

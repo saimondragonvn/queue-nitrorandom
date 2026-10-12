@@ -1,0 +1,108 @@
+{
+  "shop": {
+    "name": "Shop Nitro Random",
+    "bannerUrl": "https://raw.githubusercontent.com/azura-developer/assets/main/discord-nitro-banner.png",
+    "avatarUrl": "",
+    "nitroBasicEmoji": "<a:nitrobasic1123:1559191128509522020>",
+    "nitroBoostEmoji": "<a:kendallzstore:1559191135254224956>",
+    "nitroEmoji": "<a:kendallzstore:1559191135254224956>",
+    "currency": "vnđ",
+    "usdRate": 26000,
+    "basicPriceUsd": 2.99,
+    "boostPriceUsd": 9.99,
+    "basicPriceVnd": 77740,
+    "boostPriceVnd": 259740,
+    "primaryColor": "#5865F2",
+    "successColor": "#57F287",
+    "dangerColor": "#ED4245"
+  },
+  "bank": {
+    "bankId": "MB",
+    "bankName": "MBBank",
+    "accountNo": "0000000000",
+    "accountName": "CHỦ SHOP",
+    "transferPrefix": "NAP",
+    "expireMinutes": 60,
+    "qrTemplate": "compact2"
+  },
+  "pricing": {
+    "packages": [
+      {
+        "id": "pack_1",
+        "credits": 1,
+        "price": 25000,
+        "label": "Gói 1 xu - 1 xu, giá 25.000đ",
+        "description": "1 xu nạp nhanh vào tài khoản"
+      },
+      {
+        "id": "pack_5",
+        "credits": 5,
+        "price": 120000,
+        "label": "Gói 5 xu - 5 xu, giá 120.000đ",
+        "description": "5 xu (Tiết kiệm 5.000đ)"
+      },
+      {
+        "id": "pack_10",
+        "credits": 10,
+        "price": 230000,
+        "label": "Gói 10 xu - 10 xu, giá 230.000đ",
+        "description": "10 xu (Tiết kiệm 20.000đ)"
+      }
+    ]
+  },
+  "queueSettings": {
+    "priorityMultiplier": 3,
+    "maxShield": 10,
+    "priorityNoDeductOnBasic": true,
+    "requireToken": true,
+    "defaultStatus": "WAITING",
+    "currentTurnEmoji": "<a:hello_turn:1559210656228442122>",
+    "waitingTurnEmoji": "<a:loading_queue:1559210658669527091>",
+    "priorityEmoji": "<a:boost_priority:1559210664642224241>",
+    "shieldEmoji": "✔",
+    "discordEmoji": "<:discord_icon:1559210667712577578>",
+    "maxQueueEntriesPerToken": 3
+  },
+  "channels": {
+    "vouchChannelId": "1541438380728914000",
+    "priceChannelId": "",
+    "queueChannelId": "",
+    "claimLogChannelId": "",
+    "claimPingRoleId": "",
+    "tokenGuideChannelId": "",
+    "checkCreditChannelId": "",
+    "dmsBotChannelId": "",
+    "panelChannelId": "",
+    "statsChannelId": "",
+    "bankChannelId": "",
+    "ownerLogChannelId": "",
+    "requirementsChannelId": "",
+    "deadTokenChannelId": "",
+    "commandsChannelId": ""
+  },
+  "content": {
+    "vouchText": "Vouch: # ⊹˖ · 『✅』",
+    "priceChannelText": "",
+    "guideTitle": "Hướng dẫn Shop Nitro Random",
+    "tokenGuide": "• ⚠️ Bắt buộc tài khoản Discord nhận quà phải liên kết Số Điện Thoại (SĐT). Nếu chưa có SĐT vui lòng thêm trong Cài đặt người dùng -> Tài khoản của tôi trước khi dán token.\n• Chỉ dán token vào bot này, không gửi cho bất kỳ ai khác.\n• Giữ token còn đăng nhập cho tới khi đơn chạy xong.\n• Token hỏng giữa chừng thì đơn tạm dừng và bên mình hoàn ngay credit phần chưa nhận vào ví. Muốn chạy tiếp ở thứ hạng cũ thì dùng lệnh `/rejoin` gửi token mới của đúng tài khoản Discord đó, bên mình trừ lại số credit đã hoàn.",
+    "priorityGuide": "Chế độ Ưu tiên tiêu 3 credit cho mỗi lượt thay vì một. Đổi lại, đơn không bị trừ lượt khi ra Nitro Basic.",
+    "queuePanelTitle": "Nitro Random",
+    "queuePanelDescription": "Dùng credit để vào hàng đợi săn Nitro. Các nút bên dưới:\n\n**Dùng credit** — mở bảng chọn số lượt và gửi token nhận hàng.\n**Đổi key** — nhập key đã mua để quy đổi thành credit.\n**Hướng dẫn & số dư** — xem số dư hiện tại và cách lấy token."
+  },
+  "upstream": {
+    "enabled": false,
+    "userToken": "",
+    "guildId": "1289888622295781408",
+    "botId": "1405843081890107392",
+    "commandsChannelId": "1555969644173598811",
+    "channelId": "1541990561496694835",
+    "messageId": "1541996488127946783",
+    "buttonLabel": "Dùng credit",
+    "buttonCustomId": "redeem:join",
+    "claimChannelId": "1451968978321936547",
+    "upstreamCredits": 0,
+    "autoForward": true
+  },
+  "adminRoleIds": [],
+  "ownerId": ""
+}
