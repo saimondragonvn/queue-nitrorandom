@@ -90,7 +90,7 @@ class SniperService {
             content: chatMessage,
             embeds: [embed],
             allowedMentions: {
-              parse: ['roles', 'users'],
+              parse: ['users'],
               roles: targetPingRoleId ? [targetPingRoleId] : []
             }
           });
@@ -264,7 +264,7 @@ class SniperService {
             content: chatMessage,
             embeds: [embed],
             allowedMentions: {
-              parse: ['roles', 'users'],
+              parse: ['users'],
               roles: targetPingRoleId ? [targetPingRoleId] : []
             }
           });
