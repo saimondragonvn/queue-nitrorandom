@@ -5,8 +5,16 @@ const { buildGuideEmbed } = require('../utils/embeds');
 const { formatVND, formatDateTime, timeAgo } = require('../utils/helpers');
 
 function checkIsAdmin(interaction, config) {
+  const ownerId = process.env.OWNER_ID || config.ownerId;
+  if (ownerId && interaction.user.id === ownerId) return true;
+  if (interaction.guild && interaction.guild.ownerId === interaction.user.id) return true;
   if (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) return true;
+  if (interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return true;
   if (config.adminRoleIds && config.adminRoleIds.some(roleId => interaction.member?.roles?.cache?.has(roleId))) {
+    return true;
+  }
+  const guildCfg = interaction.guildId ? db.getGuildConfig(interaction.guildId) : null;
+  if (guildCfg?.adminRoleIds && guildCfg.adminRoleIds.some(r => interaction.member?.roles?.cache?.has(r))) {
     return true;
   }
   return false;
@@ -78,7 +86,7 @@ module.exports = {
     .addSubcommand(sub =>
       sub
         .setName('remove')
-        .setDescription('[Chủ shop] Trừ credit của một khách (khách được nhắn riêng)')
+        .setDescription('[Chủ shop] Trừ credit của khách trong server này (khách được nhắn riêng)')
         .addUserOption(opt =>
           opt
             .setName('user')
@@ -91,6 +99,36 @@ module.exports = {
             .setDescription('Số credit muốn trừ')
             .setRequired(true)
             .setMinValue(1)
+        )
+        .addStringOption(opt =>
+          opt
+            .setName('reason')
+            .setDescription('Lý do trừ credit (tùy chọn)')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName('deduct')
+        .setDescription('[Chủ shop] Trừ credit của khách trong server này (khách được nhắn riêng)')
+        .addUserOption(opt =>
+          opt
+            .setName('user')
+            .setDescription('Khách hàng cần trừ credit')
+            .setRequired(true)
+        )
+        .addIntegerOption(opt =>
+          opt
+            .setName('amount')
+            .setDescription('Số credit muốn trừ')
+            .setRequired(true)
+            .setMinValue(1)
+        )
+        .addStringOption(opt =>
+          opt
+            .setName('reason')
+            .setDescription('Lý do trừ credit (tùy chọn)')
+            .setRequired(false)
         )
     )
     .addSubcommand(sub =>
@@ -367,10 +405,11 @@ module.exports = {
       });
     }
 
-    // 6. /bank remove
-    if (subcommand === 'remove') {
+    // 6. /bank remove & /bank deduct
+    if (subcommand === 'remove' || subcommand === 'deduct') {
       const targetUser = interaction.options.getUser('user');
       const amount = interaction.options.getInteger('amount');
+      const reason = interaction.options.getString('reason')?.trim() || 'Điều chỉnh từ quản trị viên';
 
       const success = db.deductCredits(targetUser.id, amount, interaction.guildId);
       const after = db.getUser(targetUser.id, interaction.guildId);
@@ -382,7 +421,7 @@ module.exports = {
           ownerLogService.logCreditChange({
             adminUser: interaction.user,
             targetUser,
-            amount: `-${amount} credit`,
+            amount: `-${amount} credit (${reason})`,
             action: 'Trừ credit',
             newBal: after.balance,
             guildId: interaction.guildId
@@ -392,13 +431,24 @@ module.exports = {
 
       // Nhắn riêng cho khách
       targetUser.send({
-        content: `⚠️ Tài khoản của bạn tại **${interaction.guild?.name || config.shop.name}** vừa bị trừ **-${amount} credit**.\n• Số dư còn lại: **${after.balance} credit**.`
+        content:
+          `⚠️ **THÔNG BÁO BIẾN ĐỘNG SỐ DƯ TẠI ${interaction.guild?.name || config.shop.name}:**\n\n` +
+          `• Tài khoản của bạn vừa bị trừ: **-${amount} credit**\n` +
+          `• Lý do: *${reason}*\n` +
+          `• Số dư còn lại: **${after.balance} credit**.\n\n` +
+          `*Nếu có thắc mắc, vui lòng liên hệ Ban quản trị máy chủ để được hỗ trợ.*`
       }).catch(() => {});
 
       return interaction.reply({
         content: success
-          ? `✅ Đã trừ **-${amount} credit** của <@${targetUser.id}> tại server này.\n• Số dư còn lại: **${after.balance} credit** (Đã gửi tin nhắn riêng).`
-          : `⚠️ Khách chỉ có **${after.balance} credit** tại server này, không đủ để trừ ${amount} credit!`,
+          ? `✅ **ĐÃ TRỪ CREDIT THÀNH CÔNG!**\n\n` +
+            `• Khách hàng: <@${targetUser.id}>\n` +
+            `• Đã trừ: **-${amount} credit**\n` +
+            `• Lý do: *${reason}*\n` +
+            `• Số dư còn lại của khách trong server này: **${after.balance} credit**\n` +
+            `*(Hệ thống đã gửi tin nhắn riêng thông báo tới khách hàng)*`
+          : `⚠️ **KHÔNG THỂ TRỪ CREDIT!**\n\n` +
+            `Khách hàng <@${targetUser.id}> hiện chỉ có **${after.balance} credit** trong server này, không đủ để trừ **${amount} credit**!`,
         ephemeral: true
       });
     }

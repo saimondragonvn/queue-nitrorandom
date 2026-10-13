@@ -20,7 +20,8 @@ const { formatVND } = require('../utils/helpers');
 
 async function handleButtonInteraction(interaction) {
   const { customId, user } = interaction;
-  const config = getConfig();
+  const effConfig = interaction.guildId ? getGuildEffectiveConfig(interaction.guildId) : getConfig();
+  const config = effConfig;
 
   // 0. Phân trang hàng đợi (/queue view buttons)
   if (customId.startsWith('btn_queue_prev_') || customId.startsWith('btn_queue_next_') || customId.startsWith('btn_queue_refresh_')) {
@@ -36,7 +37,7 @@ async function handleButtonInteraction(interaction) {
     const activeQueue = db.getActiveQueue(interaction.guildId || null);
     const deadOrders = db.getDeadOrders(interaction.guildId || null);
     const rentalOrders = db.getRentalQueue(interaction.guildId || null);
-    const { embed, row } = buildQueueViewEmbed(config, activeQueue, deadOrders, targetPage, { rentalOrders });
+    const { embed, row } = buildQueueViewEmbed(effConfig, activeQueue, deadOrders, targetPage, { rentalOrders });
     return interaction.update({ embeds: [embed], components: [row] });
   }
 
@@ -44,12 +45,13 @@ async function handleButtonInteraction(interaction) {
   if (customId === 'btn_use_credit') {
     if (interaction.guildId) {
       const guildCfg = db.getGuildConfig(interaction.guildId) || {};
-      if (!guildCfg.upstreamToken) {
+      const upstreamBridge = require('../services/upstreamBridge');
+      if (!guildCfg.upstreamToken && !upstreamBridge.hasUpstreamConfigured(interaction.guildId)) {
         return interaction.reply({
           content:
-            `⚠️ **MÁY CHỦ CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
-            `Quản trị viên máy chủ chưa cài đặt tài khoản sỉ (Upstream Token) kết nối với shop gốc.\n` +
-            `👉 Vui lòng liên hệ Admin/Chủ shop gõ lệnh:\n` +
+            `⚠️ **HỆ THỐNG CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
+            `Bot chưa cài đặt tài khoản kết nối với shop gốc (Upstream Token).\n` +
+            `👉 Vui lòng liên hệ Quản trị viên/Chủ shop gõ lệnh:\n` +
             `\`/upstream token token:<token_acc_gốc>\` để kích hoạt nhận đơn!`,
           ephemeral: true
         });

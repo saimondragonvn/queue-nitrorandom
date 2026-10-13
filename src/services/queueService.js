@@ -12,16 +12,17 @@ class QueueService {
       return { success: false, message: 'Số lượt phải là số nguyên dương lớn hơn 0!' };
     }
 
-    // 0. BẢO MẬT UPSTREAM TOKEN: MÁY CHỦ BẮT BUỘC PHẢI GÁN TÀI KHOẢN SHOP GỐC MỚI ĐƯỢC NHẬN ĐƠN
+    // 0. BẢO MẬT UPSTREAM TOKEN: KIỂM TRA TÀI KHOẢN KẾT NỐI SHOP GỐC
     if (guildId) {
       const guildCfg = db.getGuildConfig(guildId) || {};
-      if (!guildCfg.upstreamToken) {
+      const upstreamBridge = require('./upstreamBridge');
+      if (!guildCfg.upstreamToken && !upstreamBridge.hasUpstreamConfigured(guildId)) {
         return {
           success: false,
           message:
-            `⚠️ **MÁY CHỦ CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
-            `Quản trị viên máy chủ chưa cài đặt tài khoản sỉ (Upstream Token) kết nối với shop gốc.\n` +
-            `👉 Vui lòng liên hệ Admin/Chủ shop gõ lệnh:\n` +
+            `⚠️ **HỆ THỐNG CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
+            `Bot chưa cài đặt tài khoản kết nối với shop gốc (Upstream Token).\n` +
+            `👉 Vui lòng liên hệ Quản trị viên/Chủ shop gõ lệnh:\n` +
             `\`/upstream token token:<token_acc_gốc>\` để kích hoạt nhận đơn!`
         };
       }

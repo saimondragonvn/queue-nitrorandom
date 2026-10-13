@@ -373,10 +373,11 @@ function buildQueueViewEmbed(config, queueList = [], deadOrders = [], page = 1, 
   const rentalOrders = options.rentalOrders || [];
   const timeAgo = options.timeAgo || 'vừa xong';
 
-  const currentTurnIcon = config.queueSettings?.currentTurnEmoji || '<a:00ihello:1547069327587541042>';
-  const waitingTurnIcon = config.queueSettings?.waitingTurnEmoji || '<a:7278loadingdonotdisturbcircle:1504292752173826231>';
-  const priorityIcon = config.queueSettings?.priorityEmoji || '<a:kendallzstore:1502813746953851041>';
+  const currentTurnIcon = config.queueSettings?.currentTurnEmoji || '<a:hello_turn:1559210656228442122>';
+  const waitingTurnIcon = config.queueSettings?.waitingTurnEmoji || '<a:loading_queue:1559210658669527091>';
+  const priorityIcon = config.queueSettings?.priorityEmoji || '<a:boost_priority:1559210664642224241>';
   const shieldIcon = config.queueSettings?.shieldEmoji || '✔';
+  const discordIcon = config.queueSettings?.discordEmoji || '<:discord_icon:1559210667712577578>';
   const itemsPerPage = 15;
   const totalPages = Math.max(1, Math.ceil(queueList.length / itemsPerPage));
   const currentPage = Math.min(Math.max(1, page), totalPages);
@@ -498,8 +499,9 @@ function buildLiveClaimTracker(config, { claim, user, nextOrder, queueList, stat
 
   const isBasic = (claim.nitroType || '').toLowerCase().includes('basic');
   const nitroEmoji = isBasic
-    ? resolveEmoji('nitrobasic1123', config.shop?.nitroBasicEmoji || '<a:nitrobasic1123:1559191128509522020>')
-    : resolveEmoji('kendallzstore', config.shop?.nitroBoostEmoji || '<a:kendallzstore:1559191135254224956>');
+    ? (config.shop?.nitroBasicEmoji || resolveEmoji('nitrobasic1123', '<a:nitrobasic1123:1559191128509522020>'))
+    : (config.shop?.nitroBoostEmoji || resolveEmoji('kendallzstore', '<a:kendallzstore:1559191135254224956>'));
+  const celebrateEmoji = config.shop?.celebrateEmoji || '🎉';
 
   // Xử lý thông minh người trúng để tránh hiển thị "@Người dùng không xác định":
   // 1. Nếu tài khoản token CÓ ở trong server: Ping trực tiếp <@tokenUser.id>
@@ -553,7 +555,7 @@ function buildLiveClaimTracker(config, { claim, user, nextOrder, queueList, stat
   // Message chat đi kèm ping role (Ảnh 10, 11)
   const targetPingRoleId = pingRoleId || config.channels?.claimPingRoleId;
   const chatMessage =
-    `${nitroEmoji} ${winnerChatDisplay} vừa săn được **${claim.nitroType}** trong \`${claim.speedMs}ms\` — ${claim.completedTurns || 0} trên ${claim.initialTurns || 1} lượt.` +
+    `${celebrateEmoji} ${nitroEmoji} ${winnerChatDisplay} vừa săn được **${claim.nitroType}** trong \`${claim.speedMs}ms\` — ${claim.completedTurns || 0} trên ${claim.initialTurns || 1} lượt.` +
     (targetPingRoleId ? ` <@&${targetPingRoleId}>` : '');
 
   return { chatMessage, embed };

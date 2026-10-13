@@ -32,21 +32,39 @@ class UpdaterService {
   /**
    * Gọi thông báo khi hàng đợi thay đổi (vào queue, token lỗi, rời queue, hoàn thành)
    */
-  notifyQueueChanged() {
+  notifyQueueChanged(guildId = null) {
+    if (guildId && this.client) {
+      const guild = this.client.guilds.cache.get(guildId);
+      if (guild) {
+        this.updateGuildQueue(guild).catch(() => {});
+      }
+    }
     this.scheduleUpdate();
   }
 
   /**
    * Gọi thông báo khi thống kê thay đổi (săn được Nitro, chỉnh sửa thống kê)
    */
-  notifyStatsChanged() {
+  notifyStatsChanged(guildId = null) {
+    if (guildId && this.client) {
+      const guild = this.client.guilds.cache.get(guildId);
+      if (guild) {
+        this.updateGuildStats(guild).catch(() => {});
+      }
+    }
     this.scheduleUpdate();
   }
 
   /**
    * Gọi thông báo khi bảng giá hoặc sự kiện sale thay đổi
    */
-  notifyPricePanelChanged() {
+  notifyPricePanelChanged(guildId = null) {
+    if (guildId && this.client) {
+      const guild = this.client.guilds.cache.get(guildId);
+      if (guild) {
+        this.updateGuildPricePanel(guild).catch(() => {});
+      }
+    }
     this.scheduleUpdate();
   }
 
@@ -78,15 +96,15 @@ class UpdaterService {
   /**
    * Cập nhật tin nhắn bảng giá trong kênh #price của Guild (Tự động cập nhật khi đổi giá hoặc chạy sale)
    */
-  async updateGuildPricePanel(guild, config) {
+  async updateGuildPricePanel(guild, config = null) {
+    const effConfig = getGuildEffectiveConfig(guild.id);
     const guildCfg = db.getGuildConfig(guild.id);
-    const priceChannelId = guildCfg.priceChannelId || config.channels?.priceChannelId;
+    const priceChannelId = guildCfg.priceChannelId || effConfig.channels?.priceChannelId || config?.channels?.priceChannelId;
     if (!priceChannelId) return;
 
     const channel = await guild.channels.fetch(priceChannelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
 
-    const effConfig = getGuildEffectiveConfig(guild.id);
     const saleStatus = db.getGuildSaleStatus(guild.id);
     const { embeds, components } = buildShopPanel(effConfig, saleStatus);
 
@@ -124,9 +142,10 @@ class UpdaterService {
   /**
    * Cập nhật tin nhắn bảng hàng đợi trong kênh #queue của Guild
    */
-  async updateGuildQueue(guild, config) {
+  async updateGuildQueue(guild, config = null) {
+    const effConfig = getGuildEffectiveConfig(guild.id);
     const guildCfg = db.getGuildConfig(guild.id);
-    const queueChannelId = guildCfg.queueChannelId || config.channels.queueChannelId;
+    const queueChannelId = guildCfg.queueChannelId || effConfig.channels?.queueChannelId || config?.channels?.queueChannelId;
     if (!queueChannelId) return;
 
     const channel = await guild.channels.fetch(queueChannelId).catch(() => null);
@@ -135,7 +154,7 @@ class UpdaterService {
     const activeQueue = db.getActiveQueue(guild.id);
     const deadOrders = db.getDeadOrders(guild.id);
     const rentalOrders = db.getRentalQueue(guild.id);
-    const { embed, row } = buildQueueViewEmbed(config, activeQueue, deadOrders, 1, { rentalOrders });
+    const { embed, row } = buildQueueViewEmbed(effConfig, activeQueue, deadOrders, 1, { rentalOrders });
 
     let targetMsg = null;
     if (guildCfg.queueMessageId) {
@@ -171,9 +190,10 @@ class UpdaterService {
   /**
    * Cập nhật tin nhắn bảng thống kê trong kênh #stats của Guild (Tính riêng theo từng server)
    */
-  async updateGuildStats(guild, config) {
+  async updateGuildStats(guild, config = null) {
+    const effConfig = getGuildEffectiveConfig(guild.id);
     const guildCfg = db.getGuildConfig(guild.id);
-    const statsChannelId = guildCfg.statsChannelId || config.channels.statsChannelId;
+    const statsChannelId = guildCfg.statsChannelId || effConfig.channels?.statsChannelId || config?.channels?.statsChannelId;
     if (!statsChannelId) return;
 
     const channel = await guild.channels.fetch(statsChannelId).catch(() => null);
@@ -181,7 +201,7 @@ class UpdaterService {
 
     // Lấy thống kê tính riêng cho từng server
     const stats = db.getGuildStats(guild.id);
-    const embed = buildStatsEmbed(config, stats);
+    const embed = buildStatsEmbed(effConfig, stats);
 
     let targetMsg = null;
     if (guildCfg.statsMessageId) {

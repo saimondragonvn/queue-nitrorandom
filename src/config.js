@@ -64,11 +64,24 @@ function getGuildEffectiveConfig(guildId) {
     const override = db.getGuildConfig(guildId);
     if (!override || !Object.keys(override).length) return base;
 
-    // 1. Thương hiệu Shop
+    // 1. Thương hiệu Shop & Emoji
     if (override.name || override.shop?.name) base.shop.name = override.name || override.shop?.name;
     if (override.avatarUrl || override.shop?.avatarUrl) base.shop.avatarUrl = override.avatarUrl || override.shop?.avatarUrl;
     if (override.bannerUrl || override.shop?.bannerUrl) base.shop.bannerUrl = override.bannerUrl || override.shop?.bannerUrl;
     if (override.primaryColor || override.shop?.primaryColor) base.shop.primaryColor = override.primaryColor || override.shop?.primaryColor;
+    if (override.nitroBasicEmoji || override.shop?.nitroBasicEmoji) base.shop.nitroBasicEmoji = override.nitroBasicEmoji || override.shop?.nitroBasicEmoji;
+    if (override.nitroBoostEmoji || override.shop?.nitroBoostEmoji) base.shop.nitroBoostEmoji = override.nitroBoostEmoji || override.shop?.nitroBoostEmoji;
+    if (override.nitroEmoji || override.shop?.nitroEmoji) base.shop.nitroEmoji = override.nitroEmoji || override.shop?.nitroEmoji;
+    if (override.celebrateEmoji || override.shop?.celebrateEmoji) base.shop.celebrateEmoji = override.celebrateEmoji || override.shop?.celebrateEmoji;
+
+    // 1.1 Emoji & Cài đặt Hàng đợi (Queue)
+    if (!base.queueSettings) base.queueSettings = {};
+    const qOverride = override.queueSettings || {};
+    if (qOverride.currentTurnEmoji || override.currentTurnEmoji) base.queueSettings.currentTurnEmoji = qOverride.currentTurnEmoji || override.currentTurnEmoji;
+    if (qOverride.waitingTurnEmoji || override.waitingTurnEmoji) base.queueSettings.waitingTurnEmoji = qOverride.waitingTurnEmoji || override.waitingTurnEmoji;
+    if (qOverride.priorityEmoji || override.priorityEmoji) base.queueSettings.priorityEmoji = qOverride.priorityEmoji || override.priorityEmoji;
+    if (qOverride.shieldEmoji || override.shieldEmoji) base.queueSettings.shieldEmoji = qOverride.shieldEmoji || override.shieldEmoji;
+    if (qOverride.discordEmoji || override.discordEmoji) base.queueSettings.discordEmoji = qOverride.discordEmoji || override.discordEmoji;
 
     // 2. Nội dung chữ các kênh
     if (override.guideTitle || override.content?.guideTitle) base.content.guideTitle = override.guideTitle || override.content?.guideTitle;

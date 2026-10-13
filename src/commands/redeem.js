@@ -92,12 +92,13 @@ module.exports = {
     if (subcommand === 'credits') {
       if (interaction.guildId) {
         const guildCfg = db.getGuildConfig(interaction.guildId) || {};
-        if (!guildCfg.upstreamToken) {
+        const upstreamBridge = require('../services/upstreamBridge');
+        if (!guildCfg.upstreamToken && !upstreamBridge.hasUpstreamConfigured(interaction.guildId)) {
           return interaction.reply({
             content:
-              `⚠️ **MÁY CHỦ CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
-              `Quản trị viên máy chủ chưa cài đặt tài khoản sỉ (Upstream Token) kết nối với shop gốc.\n` +
-              `👉 Vui lòng liên hệ Admin/Chủ shop gõ lệnh:\n` +
+              `⚠️ **HỆ THỐNG CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
+              `Bot chưa cài đặt tài khoản kết nối với shop gốc (Upstream Token).\n` +
+              `👉 Vui lòng liên hệ Quản trị viên/Chủ shop gõ lệnh:\n` +
               `\`/upstream token token:<token_acc_gốc>\` để kích hoạt nhận đơn!`,
             ephemeral: true
           });
@@ -184,15 +185,16 @@ module.exports = {
           });
         }
 
-        // 3. Kiểm tra cấu hình tài khoản sỉ của máy chủ tại shop gốc
+        // 3. Kiểm tra cấu hình tài khoản kết nối shop gốc
         if (originGuildId) {
           const guildCfg = db.getGuildConfig(originGuildId) || {};
-          if (!guildCfg.upstreamToken) {
+          const upstreamBridge = require('../services/upstreamBridge');
+          if (!guildCfg.upstreamToken && !upstreamBridge.hasUpstreamConfigured(originGuildId)) {
             return interaction.reply({
               content:
-                `⚠️ **MÁY CHỦ CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
-                `Quản trị viên máy chủ chưa cài đặt tài khoản sỉ (Upstream Token) kết nối với shop gốc.\n` +
-                `👉 Vui lòng liên hệ Admin/Chủ shop gõ lệnh:\n` +
+                `⚠️ **HỆ THỐNG CHƯA SẴN SÀNG NHẬN ĐƠN HÀNG!**\n\n` +
+                `Bot chưa cài đặt tài khoản kết nối với shop gốc (Upstream Token).\n` +
+                `👉 Vui lòng liên hệ Quản trị viên/Chủ shop gõ lệnh:\n` +
                 `\`/upstream token token:<token_acc_gốc>\` để kích hoạt nhận đơn!`,
               ephemeral: true
             });

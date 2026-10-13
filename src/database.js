@@ -917,11 +917,108 @@ const db = {
     return order;
   },
 
-  getAllOrders(statusFilter = null) {
-    if (!statusFilter || statusFilter === 'ALL') {
-      return [...ordersStore.data].reverse();
+  getAllOrders(statusFilter = null, guildId = null, userId = null) {
+    let filtered = ordersStore.data;
+    if (guildId) {
+      filtered = filtered.filter(o => o.guildId === guildId);
     }
-    return ordersStore.data.filter(o => o.status === statusFilter).reverse();
+    if (userId) {
+      filtered = filtered.filter(o => o.userId === userId);
+    }
+    if (statusFilter && statusFilter !== 'ALL') {
+      filtered = filtered.filter(o => o.status === statusFilter);
+    }
+    return [...filtered].reverse();
+  },
+
+  /**
+   * Thống kê toàn diện số lượng đơn và số lượt/credit cần hoàn trong server
+   * @param {string|null} guildId 
+   * @param {string|null} userId 
+   */
+  getGuildOrdersSummary(guildId = null, userId = null) {
+    const orders = this.getAllOrders('ALL', guildId, userId);
+    const config = getConfig();
+    const priorityMult = config.queueSettings?.priorityMultiplier || 3;
+
+    let totalOrders = orders.length;
+    let waitingCount = 0;
+    let huntingCount = 0;
+    let completedCount = 0;
+    let deadCount = 0;
+    let cancelledCount = 0;
+    let expiredCount = 0;
+
+    let totalTurnsInitial = 0;
+    let totalTurnsCompleted = 0;
+    let totalRemainingTurns = 0;
+    let totalRefundableCredits = 0;
+
+    const userMap = {};
+
+    for (const o of orders) {
+      const initTurns = Number(o.initialTurns || 1);
+      const compTurns = Number(o.completedTurns || 0);
+      const remTurns = Number(o.remainingTurns || 0);
+      const mult = o.isPriority ? priorityMult : 1;
+      const refundable = remTurns * mult;
+
+      totalTurnsInitial += initTurns;
+      totalTurnsCompleted += compTurns;
+
+      if (o.status === 'WAITING') waitingCount++;
+      else if (o.status === 'HUNTING') huntingCount++;
+      else if (o.status === 'COMPLETED') completedCount++;
+      else if (o.status === 'PAUSED_TOKEN_DEAD') deadCount++;
+      else if (o.status === 'CANCELLED') cancelledCount++;
+      else if (o.status === 'EXPIRED') expiredCount++;
+
+      // Các đơn chưa hoàn thành hoặc bị lỗi token cần hoàn:
+      const isPendingRefund = ['WAITING', 'HUNTING', 'PAUSED_TOKEN_DEAD'].includes(o.status);
+      if (isPendingRefund) {
+        totalRemainingTurns += remTurns;
+        totalRefundableCredits += refundable;
+      }
+
+      const uid = o.userId;
+      if (!userMap[uid]) {
+        userMap[uid] = {
+          userId: uid,
+          username: o.username || uid,
+          totalOrders: 0,
+          activeOrders: 0,
+          deadOrders: 0,
+          completedOrders: 0,
+          remainingTurns: 0,
+          refundableCredits: 0
+        };
+      }
+      userMap[uid].totalOrders++;
+      if (o.status === 'WAITING' || o.status === 'HUNTING') userMap[uid].activeOrders++;
+      if (o.status === 'PAUSED_TOKEN_DEAD') userMap[uid].deadOrders++;
+      if (o.status === 'COMPLETED') userMap[uid].completedOrders++;
+
+      if (isPendingRefund) {
+        userMap[uid].remainingTurns += remTurns;
+        userMap[uid].refundableCredits += refundable;
+      }
+    }
+
+    return {
+      totalOrders,
+      waitingCount,
+      huntingCount,
+      activeCount: waitingCount + huntingCount,
+      completedCount,
+      deadCount,
+      cancelledCount,
+      expiredCount,
+      totalTurnsInitial,
+      totalTurnsCompleted,
+      totalRemainingTurns,
+      totalRefundableCredits,
+      userList: Object.values(userMap).sort((a, b) => b.totalOrders - a.totalOrders)
+    };
   },
 
   // Pause / Resume shop

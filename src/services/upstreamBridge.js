@@ -59,6 +59,36 @@ class UpstreamBridge {
   }
 
   /**
+   * Kiểm tra xem máy chủ hoặc hệ thống đã cấu hình token shop gốc chưa
+   */
+  hasUpstreamConfigured(guildId = null) {
+    if (guildId) {
+      const guildCfg = db.getGuildConfig(guildId) || {};
+      if (guildCfg.upstreamToken) return true;
+    }
+    const config = getConfig();
+    return Boolean(
+      process.env.UPSTREAM_USER_TOKEN ||
+      config.upstream?.userToken ||
+      (this.selfClient && this.selfClient.token)
+    );
+  }
+
+  /**
+   * Kiểm tra xem kết nối tới shop gốc đã sẵn sàng chưa
+   */
+  isUpstreamReady(guildId = null) {
+    if (guildId) {
+      const guildCfg = db.getGuildConfig(guildId) || {};
+      if (guildCfg.upstreamToken && this.clientPool?.has(guildCfg.upstreamToken)) {
+        const cl = this.clientPool.get(guildCfg.upstreamToken);
+        if (cl && cl.readyAt) return true;
+      }
+    }
+    return Boolean((this.selfClient && this.selfClient.readyAt) || this.isReady);
+  }
+
+  /**
    * Khởi động User Account (Selfbot) kết nối vào server shop gốc
    */
   async initialize(mainBotClient) {
@@ -193,20 +223,25 @@ class UpstreamBridge {
       guildCfg = db.getGuildConfig(guildId) || {};
       if (guildCfg.upstreamToken) {
         activeClient = await this.getClientForToken(guildCfg.upstreamToken, guildId);
-      } else {
-        return {
-          success: false,
-          message: '❌ Máy chủ này chưa cài đặt tài khoản kết nối shop gốc (Upstream User Token)! Vui lòng dùng lệnh `/upstream token token:<token_acc_gốc>` để kết nối tài khoản sỉ của server.'
-        };
       }
-    } else {
-      activeClient = this.selfClient;
+    }
+
+    // Tự động fallback: nếu server chưa cài token riêng, bot tự lấy tài khoản gốc chung đã có trong shop gốc
+    if (!activeClient || !activeClient.readyAt) {
+      if (this.selfClient && this.selfClient.readyAt) {
+        activeClient = this.selfClient;
+      } else {
+        const globalToken = process.env.UPSTREAM_USER_TOKEN || config.upstream?.userToken;
+        if (globalToken) {
+          activeClient = await this.getClientForToken(globalToken, guildId);
+        }
+      }
     }
 
     if (!activeClient || !activeClient.readyAt) {
       return {
         success: false,
-        message: '❌ Tài khoản kết nối shop gốc (Upstream User Token) của máy chủ này chưa sẵn sàng! Vui lòng dùng lệnh `/upstream token token:<token_acc_gốc>` để kết nối.'
+        message: '❌ Tài khoản kết nối shop gốc (Upstream User Token) chưa sẵn sàng! Vui lòng dùng lệnh `/upstream token token:<token_acc_gốc>` hoặc cấu hình token trong bot.'
       };
     }
 
@@ -385,25 +420,25 @@ class UpstreamBridge {
 
         const cleanup = () => {
           clearTimeout(timeout);
-          this.selfClient.removeListener('raw', rawHandler);
-          this.selfClient.removeListener('interactionModalCreate', modalHandler);
+          activeClient.removeListener('raw', rawHandler);
+          activeClient.removeListener('interactionModalCreate', modalHandler);
         };
 
-        this.selfClient.on('raw', rawHandler);
-        this.selfClient.on('interactionModalCreate', modalHandler);
+        activeClient.on('raw', rawHandler);
+        activeClient.on('interactionModalCreate', modalHandler);
       });
 
       // 4. Bấm nút thông qua Selfbot API
       const clickPromise = message.clickButton(buttonComponent.customId).catch(async err => {
         console.log('[UPSTREAM BRIDGE] clickButton fallback via api.interactions.post:', err.message);
-        await this.selfClient.api.interactions.post({
+        await activeClient.api.interactions.post({
           data: {
             type: 3,
             guild_id: message.guildId,
             channel_id: message.channelId,
             message_id: message.id,
             application_id: message.applicationId || message.author.id,
-            session_id: this.selfClient.sessionId,
+            session_id: activeClient.sessionId,
             data: {
               component_type: 2,
               custom_id: buttonComponent.customId

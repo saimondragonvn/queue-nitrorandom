@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const db = require('../database');
-const { getConfig } = require('../config');
+const { getConfig, getGuildEffectiveConfig } = require('../config');
 const queueService = require('../services/queueService');
 const { buildQueueViewEmbed, buildSyncedQueueEmbed } = require('../utils/embeds');
 const { maskToken, formatDateTime } = require('../utils/helpers');
@@ -135,7 +135,8 @@ module.exports = {
 
   async execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
-    const config = getConfig();
+    const effConfig = interaction.guildId ? getGuildEffectiveConfig(interaction.guildId) : getConfig();
+    const config = effConfig;
 
     // 1. /queue view
     if (subcommand === 'view') {
@@ -143,7 +144,7 @@ module.exports = {
       const deadOrders = db.getDeadOrders(interaction.guildId || null);
       const rentalOrders = db.getRentalQueue(interaction.guildId || null);
       const page = interaction.options.getInteger('page') || 1;
-      const { embed, row } = buildQueueViewEmbed(config, activeQueue, deadOrders, page, { rentalOrders });
+      const { embed, row } = buildQueueViewEmbed(effConfig, activeQueue, deadOrders, page, { rentalOrders });
       return interaction.reply({ embeds: [embed], components: [row] });
     }
 

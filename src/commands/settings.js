@@ -59,6 +59,34 @@ module.exports = {
         .setName('profile')
         .setDescription('Mở biểu mẫu sửa tên shop, avatar, banner, giới thiệu riêng cho server này')
     )
+    // 0.2. emoji (Tùy chỉnh emoji cho hàng đợi & kênh claim)
+    .addSubcommand(sub =>
+      sub
+        .setName('emoji')
+        .setDescription('Tùy chỉnh emoji cho hàng đợi (Queue) và kênh thông báo săn được (Claim)')
+        .addStringOption(opt =>
+          opt
+            .setName('type')
+            .setDescription('Vị trí emoji cần tùy chỉnh')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Hàng đợi: Lượt hiện tại (Current Turn)', value: 'current_turn' },
+              { name: 'Hàng đợi: Lượt đang chờ (Waiting Turn)', value: 'waiting_turn' },
+              { name: 'Hàng đợi: Chế độ Ưu tiên (Priority / Boost)', value: 'priority' },
+              { name: 'Hàng đợi: Khiên bảo vệ (Shield)', value: 'shield' },
+              { name: 'Hàng đợi: Icon Discord (Discord Icon)', value: 'discord' },
+              { name: 'Kênh Claim & Shop: Nitro Basic', value: 'nitro_basic' },
+              { name: 'Kênh Claim & Shop: Nitro Boost', value: 'nitro_boost' },
+              { name: 'Kênh Claim: Icon ăn mừng trúng quà (Celebrate)', value: 'celebrate' }
+            )
+        )
+        .addStringOption(opt =>
+          opt
+            .setName('emoji')
+            .setDescription('Emoji muốn dùng (Ví dụ: <a:fire:123>, 🔥, ✔) hoặc gõ DEFAULT để đặt lại mặc định')
+            .setRequired(true)
+        )
+    )
     // 1. pause & resume
     .addSubcommand(sub =>
       sub
@@ -456,6 +484,160 @@ module.exports = {
         .setFooter({ text: `${config.shop.name} • Cập nhật bởi ${interaction.user.tag}` });
 
       return interaction.reply({ embeds: [embed] });
+    }
+
+    // 0.2. emoji
+    if (subcommand === 'emoji') {
+      const type = interaction.options.getString('type');
+      let emojiInput = interaction.options.getString('emoji').trim();
+      const isReset = ['DEFAULT', 'RESET', 'REMOVE', 'DELETE', 'NONE'].includes(emojiInput.toUpperCase());
+
+      const defaults = {
+        current_turn: '<a:hello_turn:1559210656228442122>',
+        waiting_turn: '<a:loading_queue:1559210658669527091>',
+        priority: '<a:boost_priority:1559210664642224241>',
+        shield: '✔',
+        discord: '<:discord_icon:1559210667712577578>',
+        nitro_basic: '<a:nitrobasic1123:1559191128509522020>',
+        nitro_boost: '<a:kendallzstore:1559191135254224956>',
+        celebrate: '🎉'
+      };
+
+      const typeNames = {
+        current_turn: 'Lượt hiện tại trong hàng đợi (Current Turn)',
+        waiting_turn: 'Lượt đang chờ trong hàng đợi (Waiting Turn)',
+        priority: 'Chế độ Ưu tiên (Priority)',
+        shield: 'Khiên bảo vệ (Shield)',
+        discord: 'Icon Discord tài khoản nhận quà',
+        nitro_basic: 'Icon Nitro Basic (Kênh claim & Shop)',
+        nitro_boost: 'Icon Nitro Boost (Kênh claim & Shop)',
+        celebrate: 'Icon ăn mừng trúng quà (Kênh claim)'
+      };
+
+      let resolvedEmoji = emojiInput;
+      let noteExternal = '';
+      if (!isReset) {
+        // Tự động phân giải nếu người dùng gõ emoji dạng name (:fire:, fire) hoặc ID (123456789)
+        const nameMatch = emojiInput.match(/^:?([a-zA-Z0-9_~]+):?$/);
+        const idMatch = emojiInput.match(/^(\d{17,20})$/);
+        if (nameMatch || idMatch) {
+          const searchKey = (nameMatch ? nameMatch[1] : idMatch[1]).toLowerCase();
+          const found =
+            interaction.guild?.emojis?.cache?.find(e => e.name.toLowerCase() === searchKey || e.id === searchKey) ||
+            interaction.client?.emojis?.cache?.find(e => e.name.toLowerCase() === searchKey || e.id === searchKey);
+          if (found) {
+            resolvedEmoji = found.toString();
+          }
+        }
+
+        // Kiểm tra nếu là custom emoji (<:name:id> hoặc <a:name:id>), kiểm tra xem bot có thể dùng được không
+        const customEmojiMatch = resolvedEmoji.match(/<a?:[a-zA-Z0-9_]+:(\d+)>/);
+        if (customEmojiMatch) {
+          const emojiId = customEmojiMatch[1];
+          const hasInClient = interaction.client?.emojis?.cache?.has(emojiId);
+          if (!hasInClient) {
+            noteExternal = `\n⚠️ *Lưu ý: Custom emoji này thuộc máy chủ mà Bot chưa tham gia. Nếu Bot chưa được mời vào server chứa emoji đó, Discord có thể không hiển thị được.*`;
+          }
+        }
+      }
+
+      const finalEmoji = isReset ? defaults[type] : resolvedEmoji;
+      const typeName = typeNames[type] || type;
+
+      // Lưu cho server hiện tại nếu chạy trong Guild
+      if (interaction.guildId) {
+        const guildCfg = db.getGuildConfig(interaction.guildId) || {};
+        const qSettings = guildCfg.queueSettings || {};
+
+        if (type === 'current_turn') {
+          if (isReset) {
+            delete qSettings.currentTurnEmoji;
+            delete guildCfg.currentTurnEmoji;
+          } else {
+            qSettings.currentTurnEmoji = finalEmoji;
+            guildCfg.currentTurnEmoji = finalEmoji;
+          }
+        } else if (type === 'waiting_turn') {
+          if (isReset) {
+            delete qSettings.waitingTurnEmoji;
+            delete guildCfg.waitingTurnEmoji;
+          } else {
+            qSettings.waitingTurnEmoji = finalEmoji;
+            guildCfg.waitingTurnEmoji = finalEmoji;
+          }
+        } else if (type === 'priority') {
+          if (isReset) {
+            delete qSettings.priorityEmoji;
+            delete guildCfg.priorityEmoji;
+          } else {
+            qSettings.priorityEmoji = finalEmoji;
+            guildCfg.priorityEmoji = finalEmoji;
+          }
+        } else if (type === 'shield') {
+          if (isReset) {
+            delete qSettings.shieldEmoji;
+            delete guildCfg.shieldEmoji;
+          } else {
+            qSettings.shieldEmoji = finalEmoji;
+            guildCfg.shieldEmoji = finalEmoji;
+          }
+        } else if (type === 'discord') {
+          if (isReset) {
+            delete qSettings.discordEmoji;
+            delete guildCfg.discordEmoji;
+          } else {
+            qSettings.discordEmoji = finalEmoji;
+            guildCfg.discordEmoji = finalEmoji;
+          }
+        } else if (type === 'nitro_basic') {
+          if (isReset) delete guildCfg.nitroBasicEmoji;
+          else guildCfg.nitroBasicEmoji = finalEmoji;
+        } else if (type === 'nitro_boost') {
+          if (isReset) delete guildCfg.nitroBoostEmoji;
+          else guildCfg.nitroBoostEmoji = finalEmoji;
+        } else if (type === 'celebrate') {
+          if (isReset) delete guildCfg.celebrateEmoji;
+          else guildCfg.celebrateEmoji = finalEmoji;
+        }
+
+        guildCfg.queueSettings = qSettings;
+        db.setGuildConfig(interaction.guildId, guildCfg);
+      } else {
+        // Lưu global nếu là bot owner trong DM
+        if (!config.queueSettings) config.queueSettings = {};
+        if (!config.shop) config.shop = {};
+
+        if (type === 'current_turn') config.queueSettings.currentTurnEmoji = isReset ? defaults.current_turn : finalEmoji;
+        else if (type === 'waiting_turn') config.queueSettings.waitingTurnEmoji = isReset ? defaults.waiting_turn : finalEmoji;
+        else if (type === 'priority') config.queueSettings.priorityEmoji = isReset ? defaults.priority : finalEmoji;
+        else if (type === 'shield') config.queueSettings.shieldEmoji = isReset ? defaults.shield : finalEmoji;
+        else if (type === 'discord') config.queueSettings.discordEmoji = isReset ? defaults.discord : finalEmoji;
+        else if (type === 'nitro_basic') config.shop.nitroBasicEmoji = isReset ? defaults.nitro_basic : finalEmoji;
+        else if (type === 'nitro_boost') config.shop.nitroBoostEmoji = isReset ? defaults.nitro_boost : finalEmoji;
+        else if (type === 'celebrate') config.shop.celebrateEmoji = isReset ? defaults.celebrate : finalEmoji;
+
+        saveConfig(config);
+      }
+
+      // Kích hoạt cập nhật bảng hàng đợi realtime ngay lập tức
+      try {
+        const updaterService = require('../services/updaterService');
+        if (interaction.guild) {
+          updaterService.updateGuildQueue(interaction.guild).catch(() => {});
+        }
+        updaterService.notifyQueueChanged(interaction.guildId);
+      } catch (e) {}
+
+      return interaction.reply({
+        content:
+          `✅ **ĐÃ CẬP NHẬT EMOJI THÀNH CÔNG!**\n\n` +
+          `• Vị trí: **${typeName}**\n` +
+          `• Emoji hiển thị: ${finalEmoji} (\`${finalEmoji}\`)\n` +
+          (isReset ? `*(Đã đặt lại về emoji mặc định của hệ thống)*\n\n` : `\n`) +
+          noteExternal +
+          `📡 *Bảng hàng đợi realtime và kênh claim đã được đồng bộ với emoji mới ngay lập tức!*`,
+        ephemeral: true
+      });
     }
 
     // 0. profile (Biểu mẫu tùy chỉnh thương hiệu riêng từng server)

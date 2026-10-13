@@ -302,11 +302,13 @@ client.on('messageCreate', async message => {
 
     // ;queue hoặc ;q - Xem hàng đợi
     if (cmd === 'queue' || cmd === 'q') {
-      const activeQueue = db.getActiveQueue();
-      const deadOrders = db.getDeadOrders();
-      const rentalOrders = db.getRentalQueue();
+      const activeQueue = db.getActiveQueue(message.guild?.id || null);
+      const deadOrders = db.getDeadOrders(message.guild?.id || null);
+      const rentalOrders = db.getRentalQueue(message.guild?.id || null);
       const { buildQueueViewEmbed } = require('./utils/embeds');
-      const { embed, row } = buildQueueViewEmbed(config, activeQueue, deadOrders, 1, { rentalOrders });
+      const { getGuildEffectiveConfig } = require('./config');
+      const effConfig = message.guild?.id ? getGuildEffectiveConfig(message.guild.id) : config;
+      const { embed, row } = buildQueueViewEmbed(effConfig, activeQueue, deadOrders, 1, { rentalOrders });
       return await message.reply({ embeds: [embed], components: [row] }).catch(() => {});
     }
 
