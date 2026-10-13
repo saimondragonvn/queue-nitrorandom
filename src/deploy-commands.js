@@ -31,18 +31,8 @@ const rest = new REST({ version: '10' }).setToken(token);
 
 (async () => {
   try {
-    const activeGuilds = [];
-    if (process.env.GUILD_ID) activeGuilds.push(process.env.GUILD_ID.trim());
-    try {
-      const gFiles = fs.readdirSync(path.join(__dirname, '../data/guilds')).filter(f => f.endsWith('.json'));
-      for (const gf of gFiles) {
-        const gid = gf.replace('.json', '');
-        if (/^\d{17,21}$/.test(gid) && !activeGuilds.includes(gid)) {
-          activeGuilds.push(gid);
-        }
-      }
-    } catch (e) {}
-    for (const gid of activeGuilds) {
+    if (process.env.GUILD_ID && process.env.GUILD_ID.trim()) {
+      const gid = process.env.GUILD_ID.trim();
       try {
         const guildData = await rest.put(
           Routes.applicationGuildCommands(clientId, gid),

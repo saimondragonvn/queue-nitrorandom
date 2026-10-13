@@ -488,6 +488,7 @@ module.exports = {
 
     // 0.2. emoji
     if (subcommand === 'emoji') {
+      await interaction.deferReply({ ephemeral: true });
       const type = interaction.options.getString('type');
       let emojiInput = interaction.options.getString('emoji').trim();
       const isReset = ['DEFAULT', 'RESET', 'REMOVE', 'DELETE', 'NONE'].includes(emojiInput.toUpperCase());
@@ -628,15 +629,14 @@ module.exports = {
         updaterService.notifyQueueChanged(interaction.guildId);
       } catch (e) {}
 
-      return interaction.reply({
+      return interaction.editReply({
         content:
           `✅ **ĐÃ CẬP NHẬT EMOJI THÀNH CÔNG!**\n\n` +
           `• Vị trí: **${typeName}**\n` +
           `• Emoji hiển thị: ${finalEmoji} (\`${finalEmoji}\`)\n` +
           (isReset ? `*(Đã đặt lại về emoji mặc định của hệ thống)*\n\n` : `\n`) +
           noteExternal +
-          `📡 *Bảng hàng đợi realtime và kênh claim đã được đồng bộ với emoji mới ngay lập tức!*`,
-        ephemeral: true
+          `📡 *Bảng hàng đợi realtime và kênh claim đã được đồng bộ với emoji mới ngay lập tức!*`
       });
     }
 
