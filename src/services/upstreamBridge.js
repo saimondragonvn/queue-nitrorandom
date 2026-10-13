@@ -375,11 +375,14 @@ class UpstreamBridge {
 
       let buttonComponent = null;
       for (const row of message.components) {
-        for (const comp of row.components) {
+        for (const comp of (row.components || [])) {
+          const cid = comp.customId || comp.custom_id;
+          const lbl = comp.label || '';
           if (
-            comp.type === 'BUTTON' &&
-            (comp.customId === targetCustomId ||
-             (comp.label && comp.label.toLowerCase().includes(targetLabel.toLowerCase())))
+            (comp.type === 'BUTTON' || comp.type === 2) &&
+            cid &&
+            (cid === targetCustomId ||
+             (lbl && lbl.toLowerCase().includes(targetLabel.toLowerCase())))
           ) {
             buttonComponent = comp;
             break;
@@ -388,18 +391,29 @@ class UpstreamBridge {
         if (buttonComponent) break;
       }
 
-      // Nếu không khớp theo tên, lấy nút đầu tiên có màu xanh lá (SUCCESS) hoặc nút đầu tiên của hàng 1
-      if (!buttonComponent && message.components.length > 0 && message.components[0].components.length > 0) {
-        buttonComponent = message.components[0].components[0];
+      // Nếu không khớp theo tên, lấy nút đầu tiên có customId và không phải Link button
+      if (!buttonComponent && message.components) {
+        for (const row of message.components) {
+          for (const comp of (row.components || [])) {
+            const cid = comp.customId || comp.custom_id;
+            if ((comp.type === 'BUTTON' || comp.type === 2) && cid && comp.style !== 'LINK' && comp.style !== 5) {
+              buttonComponent = comp;
+              break;
+            }
+          }
+          if (buttonComponent) break;
+        }
       }
 
-      if (!buttonComponent) {
-        return { success: false, message: 'Không tìm thấy nút bấm "Dùng credit" trên bảng queue shop gốc!' };
+      const buttonCustomId = buttonComponent ? (buttonComponent.customId || buttonComponent.custom_id) : null;
+      if (!buttonComponent || !buttonCustomId) {
+        return { success: false, message: 'Không tìm thấy nút bấm "Dùng credit" hợp lệ trên bảng queue shop gốc!' };
       }
 
-      console.log(`[UPSTREAM BRIDGE] Đang nhấp nút "${buttonComponent.label || buttonComponent.customId}" trên shop gốc...`);
+      console.log(`[UPSTREAM BRIDGE] Đang nhấp nút "${buttonComponent.label || buttonCustomId}" trên shop gốc...`);
 
       // 3. Chuẩn bị lắng nghe sự kiện Modal từ bot shop gốc
+      let cleanupModal = null;
       const modalPromise = new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           cleanup();
@@ -424,12 +438,16 @@ class UpstreamBridge {
           activeClient.removeListener('interactionModalCreate', modalHandler);
         };
 
+        cleanupModal = cleanup;
         activeClient.on('raw', rawHandler);
         activeClient.on('interactionModalCreate', modalHandler);
       });
 
+      // Bắt lỗi sớm cho modalPromise để tránh Unhandled Rejection khi timeout
+      modalPromise.catch(() => {});
+
       // 4. Bấm nút thông qua Selfbot API
-      const clickPromise = message.clickButton(buttonComponent.customId).catch(async err => {
+      const clickPromise = message.clickButton(buttonCustomId).catch(async err => {
         console.log('[UPSTREAM BRIDGE] clickButton fallback via api.interactions.post:', err.message);
         await activeClient.api.interactions.post({
           data: {
@@ -441,7 +459,7 @@ class UpstreamBridge {
             session_id: activeClient.sessionId,
             data: {
               component_type: 2,
-              custom_id: buttonComponent.customId
+              custom_id: buttonCustomId
             }
           }
         }).catch(() => {});
@@ -449,10 +467,15 @@ class UpstreamBridge {
       });
 
       // Chờ Modal xuất hiện
-      const modalResult = await Promise.race([
-        modalPromise,
-        clickPromise.then(res => (res && res.components ? res : modalPromise))
-      ]);
+      let modalResult = null;
+      try {
+        modalResult = await Promise.race([
+          modalPromise,
+          clickPromise.then(res => (res && res.components ? res : modalPromise))
+        ]);
+      } finally {
+        if (cleanupModal) cleanupModal();
+      }
 
       if (!modalResult) {
         throw new Error('Không nhận được biểu mẫu Modal từ shop gốc!');
@@ -903,36 +926,56 @@ class UpstreamBridge {
     if (!cmdChannel || typeof cmdChannel.sendSlash !== 'function') return null;
 
     return new Promise(async (resolve) => {
-      const timer = setTimeout(() => {
+      let resolved = false;
+      const doResolve = (val) => {
+        if (resolved) return;
+        resolved = true;
         cleanup();
-        resolve(null);
+        resolve(val);
+      };
+
+      const timer = setTimeout(() => {
+        doResolve(null);
       }, 10000);
 
       const updateHandler = (oldMsg, newMsg) => {
         if (initialMsg && newMsg.id === initialMsg.id && (newMsg.content || newMsg.embeds?.length)) {
-          cleanup();
-          resolve(this.normalizeMessage(newMsg));
+          doResolve(this.normalizeMessage(newMsg));
+        }
+      };
+
+      // Lắng nghe thêm DM hoặc tin nhắn từ bot gốc trả về xác nhận
+      const createHandler = (newMsg) => {
+        const isFromBot = newMsg.author?.id === botId;
+        const isDm = !newMsg.guildId;
+        const isChannel = newMsg.channelId === commandsChannelId;
+        if (isFromBot && (isDm || isChannel)) {
+          const fullText = (newMsg.content || '') + ' ' + (newMsg.embeds?.[0]?.description || '') + ' ' + (newMsg.embeds?.[0]?.title || '');
+          if (/credit|hàng đợi|mã đơn|lỗi|không hợp lệ|vị trí|số dư|đã dùng/i.test(fullText)) {
+            doResolve(this.normalizeMessage(newMsg));
+          }
         }
       };
 
       const cleanup = () => {
         clearTimeout(timer);
         clientToUse.removeListener('messageUpdate', updateHandler);
+        clientToUse.removeListener('messageCreate', createHandler);
       };
 
       clientToUse.on('messageUpdate', updateHandler);
+      clientToUse.on('messageCreate', createHandler);
 
       let initialMsg = null;
       try {
         initialMsg = await cmdChannel.sendSlash(botId, commandName, ...actualArgs);
         if (initialMsg && (initialMsg.content || initialMsg.embeds?.length)) {
-          cleanup();
-          return resolve(this.normalizeMessage(initialMsg));
+          doResolve(this.normalizeMessage(initialMsg));
         }
       } catch (err) {
         cleanup();
         console.warn(`[UPSTREAM BRIDGE] Lỗi khi gửi /${commandName}:`, err.message);
-        return resolve(null);
+        return doResolve(null);
       }
     });
   }
