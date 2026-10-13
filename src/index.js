@@ -60,6 +60,19 @@ client.once('ready', async () => {
     type: ActivityType.Custom
   });
 
+  // Tự động đồng bộ Slash Commands lên Discord trong background
+  (async () => {
+    try {
+      const commandDataList = client.commands.map(cmd => cmd.data.toJSON());
+      if (client.application) {
+        await client.application.commands.set(commandDataList);
+        console.log(`[SLASH COMMANDS] ✅ Đã đồng bộ ${commandDataList.length} lệnh (/) toàn cầu thành công!`);
+      }
+    } catch (cmdSyncErr) {
+      console.warn('[SLASH COMMANDS] Không thể tự động đồng bộ slash commands:', cmdSyncErr.message);
+    }
+  })();
+
   // Khởi động Upstream Bridge (nếu có cấu hình tài khoản gốc)
   await upstreamBridge.initialize(client);
 

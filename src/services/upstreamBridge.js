@@ -136,7 +136,7 @@ class UpstreamBridge {
           try {
             const raw = fs.readFileSync(path.join(guildsDir, file), 'utf8');
             const gCfg = JSON.parse(raw);
-            if (gCfg && gCfg.upstreamToken) {
+            if (gCfg && gCfg.upstreamToken && typeof gCfg.upstreamToken === 'string' && gCfg.upstreamToken.length > 50 && !gCfg.upstreamToken.includes('test')) {
               console.log(`[UPSTREAM BRIDGE] Đang tự động kết nối tài khoản sỉ cho Server ${gid}...`);
               await this.getClientForToken(gCfg.upstreamToken, gid);
             }

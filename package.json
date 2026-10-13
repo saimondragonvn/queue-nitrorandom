@@ -4,7 +4,7 @@
   "description": "Discord Nitro Random Queue & Credit Shop Bot Clone",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/deploy-commands.js && node src/index.js",
+    "start": "node src/index.js",
     "deploy": "node src/deploy-commands.js",
     "deploy:global": "node src/deploy-commands.js --global"
   },
